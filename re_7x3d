@@ -1,0 +1,765 @@
+--[[
+    God Weapon Script - Fluent UI Version
+    Original Author: TheTorch
+    UI Modified by: dawid
+]]
+
+-- Load Fluent UI Library
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+-- Create Main Window
+local Window = Fluent:CreateWindow({
+    Title = "God Weapon " .. Fluent.Version,
+    SubTitle = "by TheTorch",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.Insert
+})
+
+-- Create Tabs
+local Tabs = {
+    PVP = Window:AddTab({ Title = "PVP", Icon = "crosshair" }),
+    Farm = Window:AddTab({ Title = "Farm", Icon = "briefcase" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+local Options = Fluent.Options
+
+-- Configuration
+local Config = {
+    SelectedPlayers = {},
+    Highlight = {
+        Enabled = true,
+        Color = Color3.fromRGB(0, 255, 255),
+        Transparency = 0.7
+    },
+    Target = {
+        Size = Vector3.new(20, 20, 20)
+    },
+    AutoMed = {
+        Enabled = false,
+        Key = Enum.KeyCode.F,
+        KeyName = "F"
+    },
+    AutoArmor = {
+        Enabled = false,
+        KeyNumber = 1
+    },
+    Farm = {
+        Parole = {
+            Enabled = false,
+            VisitedRotations = {}
+        },
+        Grape = {
+            Enabled = false,
+            VisitedGrapes = {}
+        }
+    }
+}
+
+-- Utility Functions
+local function GetAllPlayers()
+    local playerNames = {}
+    for _, player in pairs(game.Players:GetPlayers()) do
+        table.insert(playerNames, player.Name)
+    end
+    return playerNames
+end
+
+local function UpdateAllHighlights()
+    for _, playerName in pairs(Config.SelectedPlayers) do
+        local playerModel = game.Workspace:FindFirstChild(playerName)
+        if not playerModel then continue end
+        
+        local head2 = playerModel:FindFirstChild("Head2")
+        if not head2 then continue end
+        
+        for _, child in pairs(head2:GetChildren()) do
+            if string.match(child.Name, "^TARGET_") and child:IsA("BasePart") then
+                local highlight = child:FindFirstChildOfClass("Highlight")
+                local selectionBox = child:FindFirstChildOfClass("SelectionBox")
+                
+                if highlight then
+                    highlight.Enabled = Config.Highlight.Enabled
+                    highlight.OutlineColor = Config.Highlight.Color
+                end
+                
+                if selectionBox then
+                    selectionBox.Visible = Config.Highlight.Enabled
+                    selectionBox.Color3 = Config.Highlight.Color
+                end
+                
+                if Config.Highlight.Enabled then
+                    child.Transparency = Config.Highlight.Transparency
+                end
+            end
+        end
+    end
+end
+
+local function ModifyTargetSize()
+    local modifiedCount = 0
+    
+    for _, playerName in pairs(Config.SelectedPlayers) do
+        local playerModel = game.Workspace:FindFirstChild(playerName)
+        if not playerModel then continue end
+        
+        local head2 = playerModel:FindFirstChild("Head2")
+        if not head2 then continue end
+        
+        for _, child in pairs(head2:GetChildren()) do
+            if not string.match(child.Name, "^TARGET_") then continue end
+            if not child:IsA("BasePart") then continue end
+            
+            child.Size = Config.Target.Size
+            child.Transparency = Config.Highlight.Transparency
+            
+            local highlight = child:FindFirstChildOfClass("Highlight")
+            if not highlight then
+                highlight = Instance.new("Highlight")
+                highlight.Parent = child
+            end
+            highlight.FillColor = Config.Highlight.Color
+            highlight.OutlineColor = Config.Highlight.Color
+            highlight.FillTransparency = 1
+            highlight.OutlineTransparency = 0
+            highlight.Enabled = Config.Highlight.Enabled
+            
+            local selectionBox = child:FindFirstChildOfClass("SelectionBox")
+            if not selectionBox then
+                selectionBox = Instance.new("SelectionBox")
+                selectionBox.Parent = child
+                selectionBox.Adornee = child
+            end
+            selectionBox.Color3 = Config.Highlight.Color
+            selectionBox.LineThickness = 0.05
+            selectionBox.Transparency = 0
+            selectionBox.Visible = Config.Highlight.Enabled
+            
+            modifiedCount = modifiedCount + 1
+        end
+    end
+    
+    return modifiedCount
+end
+
+-- ==================== PVP TAB ====================
+Tabs.PVP:AddParagraph({
+    Title = "Gun Settings",
+    Content = "Configure target settings and select players to modify"
+})
+
+-- Player Selection Dropdown
+local PlayerDropdown = Tabs.PVP:AddDropdown("PlayerDropdown", {
+    Title = "Select Players",
+    Description = "Choose players to target",
+    Values = GetAllPlayers(),
+    Multi = true,
+    Default = {},
+})
+
+PlayerDropdown:OnChanged(function(Value)
+    Config.SelectedPlayers = {}
+    for playerName, isSelected in pairs(Value) do
+        if isSelected then
+            table.insert(Config.SelectedPlayers, playerName)
+        end
+    end
+end)
+
+-- Refresh Players Button
+Tabs.PVP:AddButton({
+    Title = "Refresh Player List",
+    Description = "Update available players",
+    Callback = function()
+        local newPlayers = GetAllPlayers()
+        PlayerDropdown:SetValues(newPlayers)
+        Fluent:Notify({
+            Title = "Success",
+            Content = "Player list updated",
+            Duration = 3
+        })
+    end
+})
+
+-- Target Size Input
+Tabs.PVP:AddInput("TargetSize", {
+    Title = "Target Size (X,Y,Z)",
+    Default = "20,20,20",
+    Placeholder = "20,20,20",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        local values = {}
+        for value in string.gmatch(Value, "[^,]+") do
+            local num = tonumber(value)
+            if num then table.insert(values, num) end
+        end
+        
+        if #values == 3 then
+            Config.Target.Size = Vector3.new(values[1], values[2], values[3])
+            Fluent:Notify({
+                Title = "Size Updated",
+                Content = string.format("Set to %.1f,%.1f,%.1f", values[1], values[2], values[3]),
+                Duration = 3
+            })
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Please use format: X,Y,Z",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- Apply Target Size Button
+Tabs.PVP:AddButton({
+    Title = "Apply Target Size",
+    Description = "Apply size to selected players",
+    Callback = function()
+        if #Config.SelectedPlayers == 0 then
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Select at least 1 player first",
+                Duration = 3
+            })
+            return
+        end
+        
+        local count = ModifyTargetSize()
+        Fluent:Notify({
+            Title = "Success",
+            Content = "Modified " .. count .. " targets",
+            Duration = 5
+        })
+    end
+})
+
+-- Reset Target Size Button
+Tabs.PVP:AddButton({
+    Title = "Reset Target Size",
+    Description = "Reset to 0,0,0",
+    Callback = function()
+        if #Config.SelectedPlayers == 0 then
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Select at least 1 player first",
+                Duration = 3
+            })
+            return
+        end
+        
+        Config.Target.Size = Vector3.new(0, 0, 0)
+        local count = ModifyTargetSize()
+        Fluent:Notify({
+            Title = "Success",
+            Content = "Reset " .. count .. " targets to 0,0,0",
+            Duration = 5
+        })
+    end
+})
+
+-- Highlight Settings
+Tabs.PVP:AddParagraph({
+    Title = "Highlight Settings",
+    Content = "Configure visual highlights for targets"
+})
+
+-- Enable Highlight Toggle
+local HighlightToggle = Tabs.PVP:AddToggle("HighlightToggle", {
+    Title = "Enable Highlight",
+    Default = true
+})
+
+HighlightToggle:OnChanged(function(Value)
+    Config.Highlight.Enabled = Value
+    UpdateAllHighlights()
+end)
+
+-- Transparency Slider
+local TransparencySlider = Tabs.PVP:AddSlider("TransparencySlider", {
+    Title = "Transparency",
+    Description = "Adjust target transparency",
+    Default = 0.7,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+})
+
+TransparencySlider:OnChanged(function(Value)
+    Config.Highlight.Transparency = Value
+    UpdateAllHighlights()
+end)
+
+-- Highlight Color Picker
+local HighlightColor = Tabs.PVP:AddColorpicker("HighlightColor", {
+    Title = "Highlight Color",
+    Default = Color3.fromRGB(0, 255, 255)
+})
+
+HighlightColor:OnChanged(function()
+    Config.Highlight.Color = HighlightColor.Value
+    UpdateAllHighlights()
+end)
+
+-- Auto Med Settings
+Tabs.PVP:AddParagraph({
+    Title = "Auto Med",
+    Content = "Automatically use medkit with keybind"
+})
+
+Tabs.PVP:AddInput("AutoMedKey", {
+    Title = "Toggle Key",
+    Default = "F",
+    Placeholder = "F",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        local keyText = Value:upper()
+        local success, keyCode = pcall(function()
+            return Enum.KeyCode[keyText]
+        end)
+        
+        if success and keyCode then
+            Config.AutoMed.Key = keyCode
+            Config.AutoMed.KeyName = keyText
+            Fluent:Notify({
+                Title = "Key Updated",
+                Content = "Toggle key set to " .. keyText,
+                Duration = 3
+            })
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Invalid key name",
+                Duration = 3
+            })
+        end
+    end
+})
+
+local function StartAutoMed()
+    spawn(function()
+        while Config.AutoMed.Enabled do
+            local args = {"Medkit", "", ""}
+            game.Lighting:WaitForChild("Sky"):WaitForChild("Optimized"):FireServer(unpack(args))
+            wait(5)
+        end
+    end)
+end
+
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode ~= Config.AutoMed.Key then return end
+    
+    Config.AutoMed.Enabled = not Config.AutoMed.Enabled
+    
+    if Config.AutoMed.Enabled then
+        StartAutoMed()
+        Fluent:Notify({
+            Title = "Auto Med Started",
+            Content = "Press " .. Config.AutoMed.KeyName .. " to stop",
+            Duration = 3
+        })
+    else
+        Fluent:Notify({
+            Title = "Auto Med Stopped",
+            Content = "Press " .. Config.AutoMed.KeyName .. " to start",
+            Duration = 3
+        })
+    end
+end)
+
+-- Auto Armor Settings
+Tabs.PVP:AddParagraph({
+    Title = "Auto Armor",
+    Content = "Automatically equip armor when needed"
+})
+
+Tabs.PVP:AddInput("ArmorKeyNumber", {
+    Title = "Armor Key Number (1-8)",
+    Default = "1",
+    Placeholder = "1",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local number = tonumber(Value)
+        if number and number >= 1 and number <= 8 then
+            Config.AutoArmor.KeyNumber = math.floor(number)
+            Fluent:Notify({
+                Title = "Armor Key Updated",
+                Content = "Set to key " .. Config.AutoArmor.KeyNumber,
+                Duration = 3
+            })
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Please enter number 1-8",
+                Duration = 3
+            })
+        end
+    end
+})
+
+local function CheckAndEquipArmor()
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if not character then return end
+    
+    local playerModel = game.Workspace:FindFirstChild(player.Name)
+    if not playerModel then return end
+    
+    local bodyArmor = playerModel:FindFirstChild("BodyArmor")
+    if bodyArmor then return end
+    
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local keyMap = {
+        [1] = Enum.KeyCode.One,
+        [2] = Enum.KeyCode.Two,
+        [3] = Enum.KeyCode.Three,
+        [4] = Enum.KeyCode.Four,
+        [5] = Enum.KeyCode.Five,
+        [6] = Enum.KeyCode.Six,
+        [7] = Enum.KeyCode.Seven,
+        [8] = Enum.KeyCode.Eight
+    }
+    
+    local keyCode = keyMap[Config.AutoArmor.KeyNumber]
+    if not keyCode then return end
+    
+    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    wait(0.1)
+    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+end
+
+local function StartAutoArmor()
+    spawn(function()
+        while Config.AutoArmor.Enabled do
+            CheckAndEquipArmor()
+            wait(1)
+        end
+    end)
+end
+
+local AutoArmorToggle = Tabs.PVP:AddToggle("AutoArmorToggle", {
+    Title = "Auto Equip Armor",
+    Default = false
+})
+
+AutoArmorToggle:OnChanged(function(Value)
+    Config.AutoArmor.Enabled = Value
+    
+    if Value then
+        StartAutoArmor()
+        Fluent:Notify({
+            Title = "Auto Armor Started",
+            Content = "Auto armor enabled",
+            Duration = 3
+        })
+    else
+        Fluent:Notify({
+            Title = "Auto Armor Stopped",
+            Content = "Auto armor disabled",
+            Duration = 3
+        })
+    end
+end)
+
+-- ==================== FARM TAB ====================
+
+-- Parole Farm Functions
+local function GetRotationKey(rotation)
+    return string.format("%.2f_%.2f_%.2f", rotation.X, rotation.Y, rotation.Z)
+end
+
+local function FindAvailableParole()
+    local parolesFolder = game.Workspace.JOB.JOB.SCRIPT.Paroles
+    
+    for _, parole in pairs(parolesFolder:GetChildren()) do
+        if parole.Name ~= "Paroles" or not parole:IsA("BasePart") then continue end
+        
+        local collection = parole:FindFirstChild("Collection")
+        local rotationKey = GetRotationKey(parole.Rotation)
+        
+        if not collection and not Config.Farm.Parole.VisitedRotations[rotationKey] then
+            return parole, rotationKey
+        end
+    end
+    
+    return nil, nil
+end
+
+local function CountVisitedRotations()
+    local count = 0
+    for _ in pairs(Config.Farm.Parole.VisitedRotations) do
+        count = count + 1
+    end
+    return count
+end
+
+local function TeleportToParole(player, parole)
+    local character = player.Character
+    if not character then return false end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not hrp or not humanoid then return false end
+    
+    hrp.CFrame = parole.CFrame
+    wait(0.1)
+    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    
+    return true
+end
+
+local function WaitForCollection(parole)
+    local maxWait = 10
+    local waited = 0
+    
+    while waited < maxWait do
+        local collection = parole:FindFirstChild("Collection")
+        if collection then
+            collection.AncestryChanged:Wait()
+            return true
+        end
+        wait(0.1)
+        waited = waited + 0.1
+    end
+    
+    return false
+end
+
+local function StartParoleFarm()
+    local player = game.Players.LocalPlayer
+    
+    spawn(function()
+        while Config.Farm.Parole.Enabled do
+            if CountVisitedRotations() >= 6 then
+                Config.Farm.Parole.VisitedRotations = {}
+                wait(0.5)
+            end
+            
+            local parole, rotationKey = FindAvailableParole()
+            
+            if parole then
+                local success = TeleportToParole(player, parole)
+                
+                if success then
+                    wait(0.2)
+                    local collected = WaitForCollection(parole)
+                    
+                    if collected then
+                        Config.Farm.Parole.VisitedRotations[rotationKey] = true
+                    end
+                    
+                    wait(0.3)
+                else
+                    wait(1)
+                end
+            else
+                Config.Farm.Parole.VisitedRotations = {}
+                wait(0.5)
+            end
+        end
+    end)
+end
+
+Tabs.Farm:AddParagraph({
+    Title = "Auto Farm Parole",
+    Content = "Automatically farm parole locations"
+})
+
+local ParoleFarmToggle = Tabs.Farm:AddToggle("ParoleFarmToggle", {
+    Title = "Auto Farm Parole",
+    Default = false
+})
+
+ParoleFarmToggle:OnChanged(function(Value)
+    Config.Farm.Parole.Enabled = Value
+    
+    if Value then
+        StartParoleFarm()
+        Fluent:Notify({
+            Title = "Farm Started",
+            Content = "Auto parole farm enabled",
+            Duration = 3
+        })
+    else
+        Fluent:Notify({
+            Title = "Farm Stopped",
+            Content = "Auto parole farm disabled",
+            Duration = 3
+        })
+    end
+end)
+
+-- Grape Farm Functions
+local function GetPositionKey(position)
+    return string.format("%.2f_%.2f_%.2f", position.X, position.Y, position.Z)
+end
+
+local function CountVisitedGrapes()
+    local count = 0
+    for _ in pairs(Config.Farm.Grape.VisitedGrapes) do
+        count = count + 1
+    end
+    return count
+end
+
+local function TeleportAndJump(cframe)
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if not character then return false end
+    
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not hrp or not humanoid then return false end
+    
+    hrp.CFrame = cframe
+    wait(0.1)
+    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    
+    return true
+end
+
+local function FindAvailableGrape()
+    local grapeFolder = game.Workspace.JOB.JOB.SCRIPT.Grape
+    
+    for _, grape in pairs(grapeFolder:GetChildren()) do
+        if not grape:IsA("BasePart") then continue end
+        
+        local positionKey = GetPositionKey(grape.Position)
+        
+        if not Config.Farm.Grape.VisitedGrapes[positionKey] then
+            return grape, positionKey
+        end
+    end
+    
+    return nil, nil
+end
+
+local function StartGrapeFarm()
+    local player = game.Players.LocalPlayer
+    
+    spawn(function()
+        while Config.Farm.Grape.Enabled do
+            local args = {
+                "post",
+                "Grape",
+                5,
+                player:WaitForChild("Truck (150Kg)(Free)")
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("data"):FireServer(unpack(args))
+            wait(5)
+        end
+    end)
+    
+    spawn(function()
+        while Config.Farm.Grape.Enabled do
+            if CountVisitedGrapes() >= 10 then
+                Config.Farm.Grape.VisitedGrapes = {}
+                wait(0.5)
+            end
+            
+            local grape, positionKey = FindAvailableGrape()
+            
+            if grape then
+                local success = TeleportAndJump(grape.CFrame)
+                
+                if success then
+                    Config.Farm.Grape.VisitedGrapes[positionKey] = true
+                    wait(5)
+                else
+                    wait(1)
+                end
+            else
+                Config.Farm.Grape.VisitedGrapes = {}
+                wait(0.5)
+            end
+        end
+    end)
+end
+
+Tabs.Farm:AddParagraph({
+    Title = "Auto Farm Grape",
+    Content = "Automatically farm grapes and deliver to truck"
+})
+
+local GrapeFarmToggle = Tabs.Farm:AddToggle("GrapeFarmToggle", {
+    Title = "Auto Farm Grape",
+    Default = false
+})
+
+GrapeFarmToggle:OnChanged(function(Value)
+    Config.Farm.Grape.Enabled = Value
+    
+    if Value then
+        StartGrapeFarm()
+        Fluent:Notify({
+            Title = "Grape Farm Started",
+            Content = "Auto grape farm enabled",
+            Duration = 3
+        })
+    else
+        Fluent:Notify({
+            Title = "Grape Farm Stopped",
+            Content = "Auto grape farm disabled",
+            Duration = 3
+        })
+    end
+end)
+
+-- Player List Auto-Update
+game.Players.PlayerAdded:Connect(function()
+    wait(1)
+    local newPlayers = GetAllPlayers()
+    PlayerDropdown:SetValues(newPlayers)
+    Fluent:Notify({
+        Title = "Player Joined",
+        Content = "Player list updated",
+        Duration = 2
+    })
+end)
+
+game.Players.PlayerRemoving:Connect(function()
+    wait(1)
+    local newPlayers = GetAllPlayers()
+    PlayerDropdown:SetValues(newPlayers)
+    Fluent:Notify({
+        Title = "Player Left",
+        Content = "Player list updated",
+        Duration = 2
+    })
+end)
+
+-- Addons
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+InterfaceManager:SetFolder("GodWeapon")
+SaveManager:SetFolder("GodWeapon/configs")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Window:SelectTab(1)
+
+-- Final Notification
+Fluent:Notify({
+    Title = "God Weapon",
+    Content = "Script loaded successfully! Press Insert to toggle UI",
+    Duration = 5
+})
+
+SaveManager:LoadAutoloadConfig()
+
+print("God Weapon Script - Fluent UI Version loaded successfully!")
+print("Press Insert to toggle UI")
